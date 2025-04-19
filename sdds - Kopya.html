@@ -1,0 +1,328 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Grammar Escape</title>
+  <style>
+    body {
+      margin: 0;
+      overflow: hidden;
+      background: #222;
+      font-family: "Segoe UI", sans-serif;
+    }
+    #gameCanvas {
+      background: #111;
+      display: block;
+      margin: auto;
+    }
+    .menu {
+      position: absolute;
+      width: 100%;
+      text-align: center;
+      top: 20px;
+      z-index: 10;
+    }
+    .menu h1 {
+      color: white;
+      font-size: 36px;
+      text-shadow: 2px 2px 8px #000;
+      margin-bottom: 10px;
+    }
+    .menu p {
+      color: #ccc;
+      font-size: 20px;
+      margin-bottom: 10px;
+    }
+    button {
+      padding: 10px 25px;
+      margin: 10px;
+      font-size: 18px;
+      font-family: "Segoe UI", sans-serif;
+      cursor: pointer;
+      border: none;
+      border-radius: 12px;
+      background: linear-gradient(145deg, #3a3a3a, #2a2a2a);
+      color: white;
+      box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+      transition: 0.2s ease;
+    }
+    button:hover {
+      background: linear-gradient(145deg, #4a4a4a, #3a3a3a);
+      transform: scale(1.05);
+    }
+
+    .controls {
+      position: absolute;
+      bottom: 20px;
+      width: 100%;
+      display: flex;
+      justify-content: center;
+      gap: 30px;
+      pointer-events: auto;
+    }
+
+    .arrow-group {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .arrow-rows {
+      display: flex;
+      gap: 10px;
+    }
+
+    .arrow-button {
+      width: 60px;
+      height: 60px;
+      font-size: 28px;
+      background: #444;
+      color: white;
+      border-radius: 50%;
+      border: 2px solid #666;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      user-select: none;
+    }
+  </style>
+</head>
+<body>
+  <div class="menu" id="menu">
+    <h1>Grammar Escape</h1>
+    <p>Select Mode:</p>
+    <button onclick="chooseMode('endless')">Endless Mode</button>
+    <button onclick="chooseMode('escape')">10-Question Escape</button>
+  </div>
+
+  <div class="menu" id="difficultyMenu" style="display:none">
+    <h1>Select Difficulty</h1>
+    <button onclick="startGame(5)">Easy (5 Lives)</button>
+    <button onclick="startGame(3)">Medium (3 Lives)</button>
+    <button onclick="startGame(1)">Hard (1 Life)</button>
+  </div>
+
+  <canvas id="gameCanvas" width="800" height="500"></canvas>
+
+  <div class="controls">
+    <div class="arrow-group">
+      <div class="arrow-button" ontouchstart="keys.up=true" ontouchend="keys.up=false">^</div>
+      <div class="arrow-rows">
+        <div class="arrow-button" ontouchstart="keys.left=true" ontouchend="keys.left=false">‹</div>
+        <div class="arrow-button" ontouchstart="keys.down=true" ontouchend="keys.down=false">v</div>
+        <div class="arrow-button" ontouchstart="keys.right=true" ontouchend="keys.right=false">›</div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const canvas = document.getElementById("gameCanvas");
+    const ctx = canvas.getContext("2d");
+
+    const keys = { left: false, right: false, up: false, down: false };
+    let playerSpeed = 3;
+    let enemySpeed = 1.5;
+    let lives = 3;
+    let mode = "escape";
+    let gameRunning = false;
+    let currentQuestion = 0;
+    let totalQuestions = 10;
+    let correctDoorIndex = 0;
+    let doors = [];
+    let message = "";
+    let messageTimer = 0;
+
+    const spawnPoints = {
+      player: { x: canvas.width / 2 - 20, y: canvas.height / 2 - 20 },
+      enemy: { x: canvas.width / 2 - 15, y: canvas.height - 30 }
+    };
+
+    let player = { ...spawnPoints.player, w: 40, h: 40 };
+    let enemy = { ...spawnPoints.enemy, w: 30, h: 30 };
+
+    const questions = [
+      { text: "Which is a noun?", options: ["Run", "Apple", "Quickly", "Blue"], answer: 1 },
+      { text: "Which is a verb?", options: ["Dog", "Slow", "Jump", "Happy"], answer: 2 },
+      { text: "Which is an adjective?", options: ["Quick", "Swim", "Softly", "Tree"], answer: 0 },
+      { text: "Which is an adverb?", options: ["Run", "Slowly", "Red", "Dog"], answer: 1 },
+      { text: "Which is a noun?", options: ["Blue", "Kindly", "House", "Walk"], answer: 2 },
+      { text: "Which is a verb?", options: ["Love", "Book", "Yellow", "Slowly"], answer: 0 },
+      { text: "Which is an adjective?", options: ["Green", "Dance", "Fast", "Loudly"], answer: 0 },
+      { text: "Which is an adverb?", options: ["Hard", "Quick", "Quickly", "Red"], answer: 2 },
+      { text: "Which is a noun?", options: ["Table", "Clearly", "Run", "Tiny"], answer: 0 },
+      { text: "Which is a verb?", options: ["Think", "Slow", "House", "Soft"], answer: 0 }
+    ];
+
+    function chooseMode(selectedMode) {
+      mode = selectedMode;
+      document.getElementById("menu").style.display = "none";
+      document.getElementById("difficultyMenu").style.display = "block";
+    }
+
+    function startGame(startLives) {
+      lives = startLives;
+      totalQuestions = mode === "escape" ? 10 : Infinity;
+      currentQuestion = 0;
+      document.getElementById("difficultyMenu").style.display = "none";
+      resetPositions();
+      generateDoors();
+      gameRunning = true;
+      requestAnimationFrame(gameLoop);
+    }
+
+    function resetPositions() {
+      player = { ...spawnPoints.player, w: 40, h: 40 };
+      enemy = { ...spawnPoints.enemy, w: 30, h: 30 };
+    }
+
+    function generateDoors() {
+      correctDoorIndex = questions[currentQuestion % questions.length].answer;
+      const positions = [
+        { x: 0, y: 0 },
+        { x: canvas.width - 100, y: 0 },
+        { x: 0, y: canvas.height - 100 },
+        { x: canvas.width - 100, y: canvas.height - 100 }
+      ];
+      let doorColor = "#666";
+      doors = positions.map((pos, i) => ({
+        x: pos.x, y: pos.y, w: 100, h: 100,
+        text: questions[currentQuestion % questions.length].options[i],
+        index: i,
+        color: doorColor
+      }));
+    }
+
+    function drawPlayer() {
+      ctx.fillStyle = "lime";
+      ctx.fillRect(player.x, player.y, player.w, player.h);
+    }
+
+    function drawEnemy() {
+      ctx.fillStyle = "blue";
+      ctx.beginPath();
+      ctx.arc(enemy.x + enemy.w / 2, enemy.y + enemy.h / 2, enemy.w / 2, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    function drawDoors() {
+      ctx.font = "bold 16px Segoe UI";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      doors.forEach((door) => {
+        ctx.fillStyle = door.color;
+        ctx.fillRect(door.x, door.y, door.w, door.h);
+        ctx.fillStyle = "white";
+        ctx.fillText(door.text, door.x + door.w / 2, door.y + door.h / 2);
+      });
+    }
+
+    function drawUI() {
+      ctx.fillStyle = "white";
+      ctx.font = "20px Segoe UI";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "alphabetic";
+      ctx.fillText(`Lives: ${lives} | Score: ${currentQuestion}`, canvas.width / 2, 30);
+      ctx.fillText(questions[currentQuestion % questions.length].text, canvas.width / 2, 60);
+      if (messageTimer > 0) {
+        ctx.fillText(message, canvas.width / 2, canvas.height / 2 - 50);
+      }
+    }
+
+    function updatePlayer() {
+      if (keys.left) player.x -= playerSpeed;
+      if (keys.right) player.x += playerSpeed;
+      if (keys.up) player.y -= playerSpeed;
+      if (keys.down) player.y += playerSpeed;
+    }
+
+    function updateEnemy() {
+      let dx = player.x - enemy.x;
+      let dy = player.y - enemy.y;
+      let dist = Math.hypot(dx, dy);
+      enemy.x += (dx / dist) * enemySpeed;
+      enemy.y += (dy / dist) * enemySpeed;
+    }
+
+    function checkCollisions() {
+      if (
+        player.x < enemy.x + enemy.w &&
+        player.x + player.w > enemy.x &&
+        player.y < enemy.y + enemy.h &&
+        player.y + player.h > enemy.y
+      ) {
+        lives--;
+        message = "Enemy Hit!";
+        messageTimer = 60;
+        resetPositions();
+        if (lives <= 0) {
+          gameRunning = false;
+          alert("Game Over!");
+          location.reload();
+        }
+      }
+
+      doors.forEach((door) => {
+        if (
+          player.x < door.x + door.w &&
+          player.x + player.w > door.x &&
+          player.y < door.y + door.h &&
+          player.y + player.h > door.y
+        ) {
+          if (door.index === correctDoorIndex) {
+            currentQuestion++;
+            if (currentQuestion >= totalQuestions) {
+              alert("You Escaped!");
+              location.reload();
+            } else {
+              message = "Correct!";
+              messageTimer = 60;
+              resetPositions();
+              generateDoors();
+            }
+          } else {
+            lives--;
+            message = "Wrong Door!";
+            messageTimer = 60;
+            resetPositions();
+            if (lives <= 0) {
+              gameRunning = false;
+              alert("Game Over!");
+              location.reload();
+            }
+          }
+        }
+      });
+    }
+
+    function gameLoop() {
+      if (!gameRunning) return;
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      updatePlayer();
+      updateEnemy();
+      checkCollisions();
+      drawPlayer();
+      drawEnemy();
+      drawDoors();
+      drawUI();
+
+      if (messageTimer > 0) messageTimer--;
+      requestAnimationFrame(gameLoop);
+    }
+
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "ArrowLeft") keys.left = true;
+      if (e.key === "ArrowRight") keys.right = true;
+      if (e.key === "ArrowUp") keys.up = true;
+      if (e.key === "ArrowDown") keys.down = true;
+    });
+    document.addEventListener("keyup", (e) => {
+      if (e.key === "ArrowLeft") keys.left = false;
+      if (e.key === "ArrowRight") keys.right = false;
+      if (e.key === "ArrowUp") keys.up = false;
+      if (e.key === "ArrowDown") keys.down = false;
+    });
+  </script>
+</body>
+</html>
